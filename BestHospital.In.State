@@ -1,7 +1,7 @@
 #Best Hospital in State for _____ Function 
 
 best <- function(state, outcome){   
-  #arguments: State, ex FL, outcome, ex "heart attack" 
+  #arguments: State, ex "FL", outcome, ex "heart attack" 
   #reads outcome data, "Not Available" = NA
   data <- read.csv("outcome-of-care-measures.csv", na.strings = "Not Available", stringsAsFactors = FALSE) 
   statelist <- unique(data[ ,7]) #list of 50 states from column 7 of data 
