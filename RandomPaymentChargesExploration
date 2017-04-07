@@ -1,0 +1,99 @@
+
+library(dplyr)
+
+fileUrl<- "https://data.cms.gov/api/views/97k6-zzx3/rows.csv?accessType=DOWNLOAD"
+
+if (file.exists("medicareIPPS.csv") == FALSE) {
+  download.file(fileUrl, destfile = "./medicareIPPS.csv")
+}
+ippsdata <- read.csv("./medicareIPPS.csv")
+
+sdata <- ippsdata[,c("DRG.Definition","Provider.State",
+                     "Average.Covered.Charges","Average.Total.Payments")]
+
+#remove "$" from each money column and change class to numeric 
+
+sdata$Average.Covered.Charges <- as.numeric(gsub("[,$]","",sdata$Average.Covered.Charges,fixed=FALSE))
+
+sdata$Average.Total.Payments <- as.numeric(gsub("[,$]","",sdata$Average.Total.Payments,fixed=FALSE))
+
+#100 DIAGNOSTIC LEVELS
+#add column of differences between charges and total payments 
+sdata <- tbl_df(sdata)  #tibble 
+sdata <- mutate(sdata, Average.Difference = Average.Covered.Charges - Average.Total.Payments)
+
+sdata <- mutate(sdata, Percent.Paid = Average.Total.Payments / Average.Covered.Charges)
+
+
+#subsetting data by diagnoses and states where payments was larger than covered charges 
+# only .35% of the data is included here 
+overpaid <- filter(sdata, Average.Total.Payments >= Average.Covered.Charges)
+
+Diagnosis.Count <- summary(sdata$DRG.Definition)
+overpaid.Diagnosis.Count <- summary(overpaid$DRG.Definition)
+percent.diagnosis.overpaid <- overpaid.Diagnosis.Count / Diagnosis.Count
+
+most.overpaid.diagnosis <- subset(percent.diagnosis.overpaid, percent.diagnosis.overpaid >= 0.005)
+ #too obscure to continue, but it's interesting to see 25 diagnoses 
+#  specifically over pay more .5% of the time, especially in NY 
+
+#going to remove overpaid from the data as it will disproportionately skew the data 
+
+s1data <- filter(sdata, Average.Total.Payments <= Average.Covered.Charges)
+
+
+barplot(summary(s1data$DRG.Definition))
+summary(summary(s1data$DRG.Definition)) #median diagnostic count is 1498
+#I'll split between "rare" and "common" diagnosis at the median 
+frequentD <- which(summary(s1data$DRG.Definition) >= 1498)
+
+barplot(summary(s1data$Provider.State))
+summary(summary(s1data$Provider.State)) #median state count is 2395 
+#I'll split "small" and "big" state by median 2395 
+frequentSt <- which(summary(s1data$Provider.State) >= 2395)
+
+#I think a confounding variable would be to compare diagnoses across states where
+#the facilities may not be of equivalent quality i.e. because of environmental factors
+#they do not get the diagnoses regularly and thus have different costs and payments 
+
+#so I subset the data into the top half most common diagnoses and state count and the bottom 
+#half rare diagnoses and state counts 
+
+commondata <- subset(s1data, DRG.Definition %in% names(frequentD) &
+                             Provider.State %in% names(frequentSt)) 
+commondata <- mutate(commondata, number.of.diagnosis = length(DRG.Definition))
+commondata <- group_by(commondata, DRG.Definition)
+
+
+raredata <- subset(s1data, !(DRG.Definition %in% names(frequentD)) &
+                     !(Provider.State %in% names(frequentSt))) 
+raredata <- group_by(raredata, DRG.Definition)
+raredata <- mutate(raredata, number.of.diagnosis = length(DRG.Definition))
+
+
+#count of each diagnosis
+commondata <- mutate(commondata, number.of.diagnosis = length(DRG.Definition)) 
+
+#plot frequency of a diagnosis 
+with(commondata, plot(number.of.diagnosis, Percent.Paid))
+with(commondata, abline(lsfit(number.of.diagnosis, Percent.Paid), col="red"))  
+
+#generally speaking, the more common a diagnosis, the more competitive the payment terms, and thus 
+#lower percent.paid ratio. 
+
+#count of each state's diagnosis count
+commondata <- mutate(commondata, state.count = length(Provider.State))
+
+
+
+with(raredata, plot(number.of.diagnosis, Percent.Paid))
+with(raredata,abline(lsfit(number.of.diagnosis,Percent.Paid), col = "red"))
+
+#with rarer diagnoses the ability to compete for payment terms is reduced as shown by the slope. 
+
+
+#be careful double grouping, your diagnosis count was off 
+#not a real noticeable difference among percent paid based on diagnoses. 
+#maybe use summarise_each to get the average percent paid for each diagnosis but keep the 
+#count of the diagnosis 
+
